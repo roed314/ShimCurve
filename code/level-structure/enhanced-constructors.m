@@ -800,18 +800,9 @@ intrinsic ComputeLats(X::AlgQuatEnhSys, N::RngIntElt)
     trivH := [subs[i] : i in [1..#subs] | detimages[i] eq 1];
 
     ker_reds := getGLReductionKernels(X, N);
-<<<<<<< HEAD
     surjLevel := [getLevel(H, ker_reds, N) : H in surjH];
     ker1_reds := getSLReductionKernels(X, N, ker_reds);
     trivLevel := [getLevel(H, ker1_reds, N) : H in trivH];
-
-    surjLabel := ["\\N" : H in surjH];
-    trivLabel := ["\\N" : H in trivH];
-=======
-    surjLevel := [getLevel(H, ker_reds) : H in surj_gerby_H];
-    ker1_reds := getSLReductionKernels(X, N);
-    trivLevel := [getLevel(H, ker1_reds) : H in triv_gerby_H];
->>>>>>> f23f2a9e92795096aabee4a5a34b9fe28b168ad0
 
     primes := PrimeDivisors(N);
     divN := Divisors(N);
