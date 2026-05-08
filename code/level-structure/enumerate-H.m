@@ -52,61 +52,8 @@ function SortGClass(L)
     return ans;
 end function;
 
-procedure SetLevel(Lat, i, X, ker_reds, N, ~label_lower : lat_det := 0)
-    Lats := (lat_det eq 0) select X`Lat else X`Lat1;
-    H := Lat`subs[i];
-    Enh := X`Enh[N];
-    H`Enh := Enh;
-    H`level := N; // default; overridden below if from lower level
-    H`index := Lat`Grp`order div H`order;
-    for p -> kerp in ker_reds do
-        if kerp[1] subset H`subgroup then
-            if IsDefined(Lats, N div p) then
-                pLat := Lats[N div p];
-                // image of reduction
-                // Him := sub<pLat`Grp`MagmaGrp | Generators(H`subgroup)>;
-                Him := Transfer(X, N, p)(H`subgroup);
-                ambient_N := Modulus(BaseRing(pLat`Grp`MagmaGrp));
-                if ambient_N ne N div p then
-                    Him := Him@@Transfer(X, ambient_N, ambient_N div (N div p));
-                end if;
-                Hi := SubgroupIdentify(pLat, Him);
-                HH := pLat`subs[Hi];
-                H`level := HH`level;
-                H`shimura_label := HH`shimura_label;
-                break;
-            else
-                // TODO: Handle the shimura_level correctly
-                assert IsDivisibleBy(H`level, p);
-                // At the moment, no reason for N to be squarefree
-                // assert IsSquarefree(N); // Must compute prior level N separately
-                H`level := H`level div p;
-                Include(~label_lower, H`level);
-            end if;
-        end if;
-    end for;
-    H`genus := EnhancedGenus(RamificationData(H));
-end procedure;
-
-intrinsic FromLowerLevel(Lat::SubgroupLat, X::AlgQuatEnhSys, N::RngIntElt : naive:=false, lat_det := 0)
+intrinsic ComputeLevelsLabels(Lat::SubgroupLat, X::AlgQuatEnhSys, N::RngIntElt : naive:=false)
 {}
-    ker_reds := (lat_det eq 0) select getGLReductionKernels(X, N) else getSLReductionKernels(X, N);
-    label_lower := {};
-    for i in [1..#Lat] do
-        vprint ShimuraCurves, 3: "i = ", i;
-        SetLevel(Lat, i, X, ker_reds, N, ~label_lower : lat_det := lat_det);
-    end for;
-    for lower in label_lower do
-        // We need to deal with level 1 and 2 specially
-        ComputeLevelsLabels(Lat, X, lower : lower_first:=false, naive:=naive, lat_det := lat_det);
-    end for;
-end intrinsic;
-
-intrinsic ComputeLevelsLabels(Lat::SubgroupLat, X::AlgQuatEnhSys, N::RngIntElt : lower_first:=true, naive:=false, lat_det := 0)
-{}
-    if lower_first then
-        FromLowerLevel(Lat, X, N : naive:=naive, lat_det := lat_det);
-    end if;
     this_level := [H : H in Lat`subs | H`level eq N];
     by_ig := IndexFibers(this_level, func<x|<x`level, x`index, x`genus>>);
     for ig -> Hs in by_ig do
@@ -129,75 +76,6 @@ intrinsic ComputeLevelsLabels(Lat::SubgroupLat, X::AlgQuatEnhSys, N::RngIntElt :
             end for;
         end for;
     end for;
-end intrinsic;
-
-intrinsic EnumerateGerbiestSurjectiveH(X::AlgQuatEnhSys, N::RngIntElt) -> SeqEnum[Re] // OmodN::AlgQuatOrdRes, AutFull::Map, G::GrpMat, ONx::GrpMat, Ahom::HomGrp, KG::GrpMat) -> SeqEnum[Rec]
-{return all of the enhanced subgroups which contain the entire kernel (maximal size of gerbe, hence gerbisest), and having surjective reduced norm, in a list with each one being a record (rethink it).}
-
-  Enh := X`Enh[N];
-  OmodN := Enh`rhs;
-  O := OmodN`quaternionorder;
-  Ahom := AtoGL4(Enh);
-  G := GL4sub(Enh);
-  G1 := EnhancedImageGL4O1(Enh);
-  KG := NormalizerKernelGL4(Enh);
-  assert IsNormal(G, KG);
-
-  fake_label := Sprintf("%o.a", #G); // The FiniteGroup code expects a label, but only the order is actually used
-  GG := NewLMFDBGrp(G, fake_label);
-  AssignBasicAttributes(GG); // Computes basic invariants (like solvable, nilpotent) which are expected by the finite group code
-
-  Latfull := New(SubgroupLat);
-  Latfull`Grp := GG;
-  Latfull`outer_equivalence := false; // We want subgroups up to conjugacy, not up to automorphism
-  Latfull`inclusions_known := true; // We want to compute inclusion relations
-  Latfull`index_bound := 0; // Even though we are restricting subgroups, it's not correctly modeled by an index bound
-
-  fake_label := Sprintf("%o.a", #G1); // The FiniteGroup code expects a label, but only the order is actually used
-  GG1 := NewLMFDBGrp(G1, fake_label);
-  AssignBasicAttributes(GG1); 
-
-  Lat1 := New(SubgroupLat);
-  Lat1`Grp := GG1; // Even though all the subgroups here will be contained in G1, the equivalence relation is under conjugacy in GG
-  Lat1`outer_equivalence := false; // We want subgroups up to GG-conjugacy, not up to automorphism
-  Lat1`inclusions_known := false; // We don't need inclusion relationship for the G1-subgroups
-  Lat1`index_bound := 0; // Even though we are restricting subgroups, it's not correctly modeled by an index bound
-
-  // Compute the list of subgroups
-  t0 := Cputime();
-  subs := Subgroups(G, KG);
-  vprint ShimuraCurves: "MagmaSubgroups", Cputime() - t0;
-
-  t0 := Cputime();
-  detimages := [#getDeterminantImage(H`subgroup, O, Ahom) : H in subs];
-  vprint ShimuraCurves: "DeterminantImages", Cputime() - t0; t0 := Cputime();
-
-  phiN := EulerPhi(N);
-  surjH := [subs[i] : i in [1..#subs] | detimages[i] eq phiN];
-  trivH := [subs[i] : i in [1..#subs] | detimages[i] eq 1];
-
-  // FiniteGroup code prefers lower index earlier
-  Reverse(~surjH); Reverse(~trivH);
-
-  // Create lattices
-  Latfull`subs := [SubgroupLatElement(Latfull, surjH[i]`subgroup : i:=i, subgroup_count:=surjH[i]`length) : i in [1..#surjH]];
-  Lat1`subs := [SubgroupLatElement(Lat1, trivH[i]`subgroup : i:=i, subgroup_count:=trivH[i]`length) : i in [1..#trivH]];
-
-  t0 := Cputime();
-  // This needs to be sped up (lattice edges are hard); we turn it off for now.
-  //ComputeLatticeEdges(Latfull, G, IdentityHomomorphism(G));
-  //vprint ShimuraCurves: "ComputeLatticeEdges", Cputime() - t0; t0 := Cputime();
-
-  // This requires the lattice edges, so we have to replace it with another, more naive labeling
-  //ComputeLevelsLabels(Latfull, Enh);
-  //vprint ShimuraCurves: "ComputeLevelsLabels", Cputime() - t0; t0 := Cputime();
-
-  ComputeLevelsLabels(Latfull, X, N : naive:=true, lat_det := 0);
-  vprint ShimuraCurves: "ComputeLevelsLabelsNaive", Cputime() - t0; t0 := Cputime();
-  ComputeLevelsLabels(Lat1, X, N : naive:=true, lat_det := 1);
-  vprint ShimuraCurves: "ComputeLevelsLabels1Naive", Cputime() - t0; t0 := Cputime();
-
-  return Latfull, Lat1;
 end intrinsic;
 
 intrinsic H1plusquo(H::GrpMat, Enh::AlgQuatEnh) -> GrpPerm
@@ -425,37 +303,31 @@ If N in Ns, then the every integer m dividing N should be in Ns}
   elif Ns eq [1] then
     Ns := [3];
   end if;
+  Ns := Reverse(Sort(Ns));
   seen := {};
   records := [];
-  X := SemidirectSystem(O, mu, Ns);
+  X := SemidirectSystem(O, mu);
   for N in Ns do
     print "N =", N;
     if N le 2 then continue; end if;
-    X`Enh[N] := EnhancedSemidirectProduct(O, mu : N:=N);
-    Latfull, Lat1 := EnumerateGerbiestSurjectiveH(X, N);
-    print "subs", N, #Latfull;
-    Latlevels := {H`level : H in Latfull`subs};
+    L := Lat(X, N);
+    L1 := Lat1(X, N);
+    print "subs", N, #L;
+    Latlevels := {H`level : H in L`subs};
     new_levels := Latlevels diff seen;
-    subs := [H : H in Latfull`subs | H`level in new_levels];
+    subs := [H : H in L`subs | H`level in new_levels];
     print "#filtered", N, #subs;
-    for M in new_levels do
-      // Usually just one, but sometimes also adds 1 and 2
-      // !! TODO - is this the right thing, or should we just take the sublattice
-      // corresponding to the new level M ???
-      X`Lat[M] := Latfull;
-      X`Lat1[M] := Lat1;
-    end for;
     // TODO: Need to fix handling of lower levels, especially with regard to subgroups of G1
     // Also need to set psl2label on the returned records
     t0 := Cputime();
     new_records :=  [createRecord(H, X) : H in subs];
 
     O1_subs := [H : H in Lat1`subs | H`level in new_levels];
-    
+
     G := EnhancedImageGL4(X`Enh[N]);
     G1 := EnhancedImageGL4O1(X`Enh[N]);
     ret_O1_subs := [createRecord(H,X) : H in O1_subs];
-    
+
     for idx->H in new_records do
         H1 := H`subgroup meet G1;
         assert exists(H_O1){H_O1 : H_O1 in ret_O1_subs | IsConjugate(G, H1, H_O1`subgroup)};

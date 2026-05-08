@@ -57,7 +57,6 @@ declare type AlgQuatEnhSys;
 declare attributes AlgQuatEnhSys :
   quaternionorder,
   mu,
-  Ns_maximal, // These Ns will be computed first (to save computation time: computing at level 12 gives level 6 as a consequence
   Enh, // Associative array; Enh[N] is an AlgQuatEnh object at level N
   to_perm, // Associative array; to_perm[N] is an isomorphism from GL4sub(Enh[N]) to a permutation group
   Lat, // Associative array; Lat[N] is a SubgroupLat object containing permutation subgroups at levels dividing N with surjective determinant
@@ -722,12 +721,11 @@ intrinsic UnitGroup(O::AlgQuatOrd,N::RngIntElt) -> GrpMat, Map
   return UnitGroup(quo(O,N));
 end intrinsic;
 
-intrinsic SemidirectSystem(O::AlgQuatOrd, mu::AlgQuatElt, Ns_maximal::SeqEnum[RngIntElt]) -> AlgQuatEnhSys
+intrinsic SemidirectSystem(O::AlgQuatOrd, mu::AlgQuatElt) -> AlgQuatEnhSys
 {Constructor from a quaternion order, a polarization mu, and a sequence of desired levels (which will be augmented to be closed under taking divisors}
     X := New(AlgQuatEnhSys);
     X`quaternionorder := O;
     X`mu := mu;
-    X`Ns_maximal := Ns_maximal;
     X`Enh := AssociativeArray();
     X`to_perm := AssociativeArray();
     X`Lat := AssociativeArray();
@@ -772,17 +770,6 @@ end intrinsic;
 
 intrinsic ComputeLats(X::AlgQuatEnhSys, N::RngIntElt)
 {}
-    /*N := 0;
-    for mm in X`Ns_maximal do
-        if IsDivisibleBy(mm, M) then
-            N := mm;
-            break;
-        end if;
-    end for;
-    if N eq 0 then
-        Append(~X`Ns_maximal, M);
-        N := M;
-    end if;*/
     Enh := EnhancedSemidirectProduct(X, N);
     G := GL4sub(Enh);
     phi := PermHom(X, N);
@@ -816,6 +803,7 @@ intrinsic ComputeLats(X::AlgQuatEnhSys, N::RngIntElt)
         Gm := Codomain(phim);
         fake_label := Sprintf("%o.a", #Gm); // The FiniteGroup code expects a label, but only the order is actually used
         GGm := NewLMFDBGrp(Gm, fake_label);
+        AssignBasicAttributes(GGm);
         L := New(SubgroupLat);
         L`Grp := GGm;
         L`outer_equivalence := false; // We want subgroups up to conjugacy, not up to automorphism
@@ -836,11 +824,14 @@ intrinsic ComputeLats(X::AlgQuatEnhSys, N::RngIntElt)
                     Lm0 := X`Lat[m0];
                     is_conj, j, conj_elt := SubgroupIdentify(Lm0, surjH[i]`subgroup : get_conjugator:=true);
                     assert is_conj;
-                    L`subs[i]`label := Lm0`subs[j]`label;
+                    L`subs[i]`shimura_label := Lm0`subs[j]`shimura_label;
                     L`subs[i]`full_label := Lm0`subs[j]`full_label;
                     // TODO: store conj_elt
                 end if;
+                L`subs[i]`Enh := Enh;
                 L`subs[i]`level := m0;
+                L`subs[i]`index := GGm`order div L`subs[i]`order;
+                L`subs[i]`genus := EnhancedGenus(RamificationData(L`subs[i]));
             end for;
             for i in [1..#trivH] do
                 m0 := trivLevel[i];
@@ -849,13 +840,16 @@ intrinsic ComputeLats(X::AlgQuatEnhSys, N::RngIntElt)
                     L1m0 := X`Lat1[m0];
                     is_conj, j, conj_elt := SubgroupIdentify(L1m0, trivH[i]`subgroup : get_conjugator:=true);
                     assert is_conj;
-                    L1`subs[i]`label := Lm0`subs[j]`label;
+                    L1`subs[i]`shimura_label := Lm0`subs[j]`shimura_label;
                     L1`subs[i]`full_label := Lm0`subs[j]`full_label;
                     // TODO: store conj_elt
                 end if;
+                L1`subs[i]`Enh := Enh;
                 L1`subs[i]`level := m0;
+                L`subs[i]`index := GGm`order div (L`subs[i]`order * phiN);
+                L`subs[i]`genus := EnhancedGenus(RamificationData(L`subs[i]));
             end for;
-            // TODO: we want to change how levels are set, but we keep this for now for backward compatibility
+            // TODO: we want to change how labels are set, but we keep this for now for backward compatibility
             for m0 in needed do
                 ComputeLevelsLabels(L, Enh : N:=m0, naive:=true);
                 ComputeLevelsLabels(L1, Enh : N:=m0, naive:=true);
@@ -877,9 +871,12 @@ intrinsic ComputeLats(X::AlgQuatEnhSys, N::RngIntElt)
                 H := Lup`subs[j];
                 if IsDivisibleBy(m, H`level) then
                     selt := SubgroupLatElement(L, (H`subgroup) @ reduction_map);
+                    selt`Enh := X`Enh[m];
                     selt`i := i;
                     selt`i_at_level := j;
                     selt`level := H`level;
+                    selt`index := H`index;
+                    selt`genus := H`genus;
                     selt`shimura_label := H`shimura_label;
                     Append(~L`subs, selt);
                     i +:= 1;
@@ -890,9 +887,12 @@ intrinsic ComputeLats(X::AlgQuatEnhSys, N::RngIntElt)
                 H := L1up`subs[j];
                 if IsDivisibleBy(m, H`level) then
                     selt := SubgroupLatElement(L1, (H`subgroup) @ reduction_map);
+                    selt`Enh := X`Enh[m];
                     selt`i := i;
                     selt`i_at_level := j;
                     selt`level := H`level;
+                    selt`index := H`index;
+                    selt`genus := H`genus;
                     selt`shimura_label := H`shimura_label;
                     Append(~L1`subs, selt);
                     i +:= 1;
@@ -901,7 +901,6 @@ intrinsic ComputeLats(X::AlgQuatEnhSys, N::RngIntElt)
         end if;
         X`Lat[m] := L;
         X`Lat1[m] := L1;
-        // need to port labels
     end for;
 end intrinsic;
 
