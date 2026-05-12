@@ -773,7 +773,7 @@ intrinsic ComputeLats(X::AlgQuatEnhSys, N::RngIntElt)
     Enh := EnhancedSemidirectProduct(X, N);
     G := GL4sub(Enh);
     phi := PermHom(X, N);
-    Gsubs := ComputeSubs(X, N);
+    subs := ComputeSubs(X, N);
 
     O := X`quaternionorder;
     Ahom := AtoGL4(Enh);
@@ -822,10 +822,10 @@ intrinsic ComputeLats(X::AlgQuatEnhSys, N::RngIntElt)
                 if IsDefined(X`Lat, m0) then
                     reduction := Transfer(X, N, m0);
                     Lm0 := X`Lat[m0];
-                    is_conj, j, conj_elt := SubgroupIdentify(Lm0, surjH[i]`subgroup : get_conjugator:=true);
+                    is_conj, j, conj_elt := SubgroupIdentify(Lm0, (surjH[i]`subgroup)@reduction : get_conjugator:=true);
                     assert is_conj;
                     L`subs[i]`shimura_label := Lm0`subs[j]`shimura_label;
-                    L`subs[i]`full_label := Lm0`subs[j]`full_label;
+                    //L`subs[i]`full_label := Lm0`subs[j]`full_label;
                     // TODO: store conj_elt
                 end if;
                 L`subs[i]`Enh := Enh;
@@ -838,16 +838,16 @@ intrinsic ComputeLats(X::AlgQuatEnhSys, N::RngIntElt)
                 if IsDefined(X`Lat1, m0) then
                     reduction := Transfer(X, N, m0);
                     L1m0 := X`Lat1[m0];
-                    is_conj, j, conj_elt := SubgroupIdentify(L1m0, trivH[i]`subgroup : get_conjugator:=true);
+                    is_conj, j, conj_elt := SubgroupIdentify(L1m0, (trivH[i]`subgroup)@reduction : get_conjugator:=true);
                     assert is_conj;
                     L1`subs[i]`shimura_label := Lm0`subs[j]`shimura_label;
-                    L1`subs[i]`full_label := Lm0`subs[j]`full_label;
+                    //L1`subs[i]`full_label := Lm0`subs[j]`full_label;
                     // TODO: store conj_elt
                 end if;
                 L1`subs[i]`Enh := Enh;
                 L1`subs[i]`level := m0;
-                L`subs[i]`index := GGm`order div (L`subs[i]`order * phiN);
-                L`subs[i]`genus := EnhancedGenus(RamificationData(L`subs[i]));
+                L1`subs[i]`index := GGm`order div (L1`subs[i]`order * phiN);
+                L1`subs[i]`genus := EnhancedGenus(RamificationData(L1`subs[i]));
             end for;
             // TODO: we want to change how labels are set, but we keep this for now for backward compatibility
             for m0 in needed do
