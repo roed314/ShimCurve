@@ -749,7 +749,7 @@ intrinsic PermHom(X::AlgQuatEnhSys, N::RngIntElt) -> SeqEnum
         Enh := EnhancedSemidirectProduct(X, N);
         G := GL4sub(Enh);
         Gperm, phi := MyQuotient(G, sub<G|>);
-        Gperm, psi := MinimalDegreePermutationRepresentation(Gperm);
+        psi, Gperm := MinimalDegreePermutationRepresentation(Gperm);
         X`to_perm[N] := phi * psi;
     end if;
     return X`to_perm[N];
@@ -787,36 +787,25 @@ intrinsic ComputeLats(X::AlgQuatEnhSys, N::RngIntElt)
     trivH := [subs[i] : i in [1..#subs] | detimages[i] eq 1];
 
     ker_reds := getGLReductionKernels(X, N);
-    surjLevel := [getLevel(H, ker_reds, N) : H in surjH];
+    surjLevel := [getLevel(H`subgroup, N, ker_reds) : H in surjH];
     ker1_reds := getSLReductionKernels(X, N, ker_reds);
-    trivLevel := [getLevel(H, ker1_reds, N) : H in trivH];
+    trivLevel := [getLevel(H`subgroup, N, ker1_reds) : H in trivH];
 
     primes := PrimeDivisors(N);
     divN := Divisors(N);
     needed := [m : m in divN | not IsDefined(X`Lat, m)];
     old := [m : m in divN | IsDefined(X`Lat, m)];
     Reverse(~needed);
-    msubs := AssociativeArray();
-    m1subs := AssociativeArray();
     for m in needed do
         phim := PermHom(X, m);
         Gm := Codomain(phim);
         fake_label := Sprintf("%o.a", #Gm); // The FiniteGroup code expects a label, but only the order is actually used
         GGm := NewLMFDBGrp(Gm, fake_label);
-        AssignBasicAttributes(GGm);
-        L := New(SubgroupLat);
-        L`Grp := GGm;
-        L`outer_equivalence := false; // We want subgroups up to conjugacy, not up to automorphism
-        L`inclusions_known := true; // We want to compute inclusion relations
-        L`index_bound := 0; // Even though we are restricting subgroups, it's not correctly modeled by an index bound
-        L1 := New(SubgroupLat);
-        L1`Grp := GGm;
-        L1`outer_equivalence := false; // We want subgroups up to conjugacy, not up to automorphism
-        L1`inclusions_known := true; // We want to compute inclusion relations
-        L1`index_bound := 0; // Even though we are restricting subgroups, it's not correctly modeled by an index bound
+        L := ShimuraLat(GGm);
+        L1 := ShimuraLat(GGm);
         if m eq N then
-            L`subs := [SubgroupLatElement(L, surjH[i]`subgroup : i:=i, subgroup_count:=surjH[i]`length) : i in [1..#surjH]];
-            L1`subs := [SubgroupLatElement(L, trivH[i]`subgroup : i:=i, subgroup_count:=trivH[i]`length) : i in [1..#trivH]];
+            L`subs := [ShimuraLatElement(L, surjH[i]`subgroup, X, surjLevel[i], N : i:=i, subgroup_count:=surjH[i]`length, phi_factor:=1) : i in [1..#surjH]];
+            L1`subs := [ShimuraLatElement(L, trivH[i]`subgroup, X, trivLevel[i], N : i:=i, subgroup_count:=trivH[i]`length, phi_factor:=phiN) : i in [1..#trivH]];
             for i in [1..#surjH] do
                 m0 := surjLevel[i];
                 if IsDefined(X`Lat, m0) then
@@ -828,10 +817,6 @@ intrinsic ComputeLats(X::AlgQuatEnhSys, N::RngIntElt)
                     //L`subs[i]`full_label := Lm0`subs[j]`full_label;
                     // TODO: store conj_elt
                 end if;
-                L`subs[i]`Enh := Enh;
-                L`subs[i]`level := m0;
-                L`subs[i]`index := GGm`order div L`subs[i]`order;
-                L`subs[i]`genus := EnhancedGenus(RamificationData(L`subs[i]));
             end for;
             for i in [1..#trivH] do
                 m0 := trivLevel[i];
@@ -844,10 +829,6 @@ intrinsic ComputeLats(X::AlgQuatEnhSys, N::RngIntElt)
                     //L1`subs[i]`full_label := Lm0`subs[j]`full_label;
                     // TODO: store conj_elt
                 end if;
-                L1`subs[i]`Enh := Enh;
-                L1`subs[i]`level := m0;
-                L1`subs[i]`index := GGm`order div (L1`subs[i]`order * phiN);
-                L1`subs[i]`genus := EnhancedGenus(RamificationData(L1`subs[i]));
             end for;
             // TODO: we want to change how labels are set, but we keep this for now for backward compatibility
             for m0 in needed do
@@ -857,27 +838,16 @@ intrinsic ComputeLats(X::AlgQuatEnhSys, N::RngIntElt)
         else
             p := Representative({p : p in primes | IsDivisibleBy(N, m*p)});
             reduction_map := Transfer(X, m*p, m);
+            // We construct subgroups at level m from subgroups at level m*p
             Lup := X`Lat[m*p];
             L1up := X`Lat1[m*p];
-            // We construct subgroups at level m from subgroups at level m*p
-            // mpsubs := [
-            //L`subs := [X`Lat[m*p]`subs[i] @ reduction_map : 
-            msubs[m] := [i : i in [1..#surjLevel] | IsDivisibleBy(m, surjLevel[i])];
-            m1subs[m] := [i : i in [1..#trivLevel] | IsDivisibleBy(m, trivLevel[i])];
             L`subs := [];
             L1`subs := [];
             i := 1;
             for j in [1..#Lup`subs] do
                 H := Lup`subs[j];
                 if IsDivisibleBy(m, H`level) then
-                    selt := SubgroupLatElement(L, (H`subgroup) @ reduction_map);
-                    selt`Enh := X`Enh[m];
-                    selt`i := i;
-                    selt`i_at_level := j;
-                    selt`level := H`level;
-                    selt`index := H`index;
-                    selt`genus := H`genus;
-                    selt`shimura_label := H`shimura_label;
+                    selt := ShimuraLatElement(L, (H`subgroup) @ reduction_map, X, H`level, m : i:=i, elt_up:=H);
                     Append(~L`subs, selt);
                     i +:= 1;
                 end if;
@@ -886,14 +856,7 @@ intrinsic ComputeLats(X::AlgQuatEnhSys, N::RngIntElt)
             for j in [1..#L1up`subs] do
                 H := L1up`subs[j];
                 if IsDivisibleBy(m, H`level) then
-                    selt := SubgroupLatElement(L1, (H`subgroup) @ reduction_map);
-                    selt`Enh := X`Enh[m];
-                    selt`i := i;
-                    selt`i_at_level := j;
-                    selt`level := H`level;
-                    selt`index := H`index;
-                    selt`genus := H`genus;
-                    selt`shimura_label := H`shimura_label;
+                    selt := ShimuraLatElement(L1, (H`subgroup) @ reduction_map, X, H`level, m : i:=i, elt_up:=H);
                     Append(~L1`subs, selt);
                     i +:= 1;
                 end if;

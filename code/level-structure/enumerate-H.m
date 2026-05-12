@@ -1,7 +1,9 @@
 
 declare attributes SubgroupLatElt:
-  level,
+  level, // the minimal integer N from which this subgroup can be pulled back
+  N, // the actual value of N where this subgroup is defined
   index,
+  genus,
   shimura_label,
   sigma,
   genus,
@@ -14,6 +16,38 @@ declare attributes SubgroupLat:
   // Subgroup lattices, as an associative array indexed by N.
   // Lats[N] only contains subgroups with surjective norm (and currently only the gerbiest ones),
   // but there will be overlap since subgroups of level dividing N will be included (in order to get the containment relations correct)
+
+intrinsic ShimuraLat(G::LMFDBGrp) -> SubgroupLat
+{}
+    L := New(SubgroupLat);
+    L`Grp := G;
+    L`outer_equivalence := false; // We want subgroups up to conjugacy, not up to automorphism
+    L`inclusions_known := true; // We want to compute inclusion relations
+    L`index_bound := 0; // Even though we are restricting subgroups, it's not correctly modeled by an index bound
+    // NOTE: you need to set L`subs externally
+    return L;
+end intrinsic;
+
+intrinsic ShimuraLatElement(L::SubgroupLat, H::Grp, X::AlgQuatEnhSys, level::RngIntElt, N::RngIntElt : i:=false, normalizer:=false, centralizer:=false, normal:=0, normal_closure:=false, gens:=false, subgroup_count:=false, standard:=false, recurse:=0, elt_up:=false, phi_factor:=1) -> SubgroupLatElt
+{}
+    x := SubgroupLatElement(L, H : i:=i, normalizer:=normalizer, centralizer:=centralizer, normal:=normal, normal_closure:=normal_closure, gens:=gens, subgroup_count:=subgroup_count, standard:=standard, recurse:=recurse);
+    print "PRIOR TO INVALID ASSIGN";
+    x`X := X;
+    print "AFTER INVALID ASSIGN";
+    x`N := N;
+    x`Enh := X`Enh[N];
+    x`level := level;
+    if Type(elt_up) eq BoolElt then
+        x`index := #(x`Lat`Grp`MagmaGrp) div (#H * phi_factor);
+        x`genus := EnhancedGenus(RamificationData(x));
+    else
+        x`index := elt_up`index;
+        x`genus := elt_up`genus;
+        x`shimura_label := elt_up`shimura_label;
+        x`i_at_level := elt_up`i;
+    end if;
+    return x;
+end intrinsic;
 
 // This should work for small groups
 function GroupLabel(grp)
@@ -100,7 +134,10 @@ end intrinsic;
 intrinsic H1plusquo(H::SubgroupLatElt) -> GrpPerm
 {}
     if not assigned H`H1plusquo then
-        H`H1plusquo := H1plusquo(H`subgroup, H`Enh);
+        X := H`X;
+        N := H`N;
+        phi := PermHom(X, N);
+        H`H1plusquo := H1plusquo(H`subgroup @@ phi, H`Enh);
     end if;
     return H`H1plusquo;
 end intrinsic;
