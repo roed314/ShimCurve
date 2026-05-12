@@ -6,8 +6,19 @@ function Primitive(x)
     return x * (d / GCD(n));
 end function;
 
-intrinsic Aut(O::AlgQuatOrd,mu::AlgQuatElt) -> Map
+declare attributes AlgQuatOrd:
+  aut_by_mu;
+
+intrinsic Aut(O::AlgQuatOrd,mu::AlgQuatElt) -> Map, SeqEnum
   {return Autmu(O), as a map from D_n or C_n to BxmodQx (which is not a group in Magma)}
+
+  if not assigned O`aut_by_mu then
+    O`aut_by_mu := AssociativeArray();
+  end if;
+  if IsDefined(O`aut_by_mu, mu) then
+    pair := O`aut_by_mu[mu];
+    return pair[1], pair[2];
+  end if;
 
   t0 := Cputime();
   assert IsScalar(mu^2);
@@ -66,6 +77,7 @@ intrinsic Aut(O::AlgQuatOrd,mu::AlgQuatElt) -> Map
   image := [e[2] : e in elts];
   assert MapIsHomomorphism(grp_map : injective:=true);
   vprint ShimuraCurves, 3: "Aut_mu(O)", Cputime() - t0;
+  O`aut_by_mu[mu] := <grp_map, image>;
   return grp_map, image;
 end intrinsic;
 

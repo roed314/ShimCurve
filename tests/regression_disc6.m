@@ -1,5 +1,6 @@
 AttachSpec("spec");
 SetVerbose("ShimuraCurves", 1);
+SetDebugOnError(true);
 
 D := 6;
 B := QuaternionAlgebra(D);
@@ -14,5 +15,5 @@ for deg in Divisors(D) do
   time L4 := Lat(X, 4);
   subs := L6`subs cat [H : H in L4`subs | H`level eq 4];
   //time subs := GenerateDataForGerbiestSurjectiveH(O,mu,Ns);
-  WriteHeaderAndSubgroupsDataToFile(subs, O);
+  WriteHeaderAndSubgroupsDataToFile(subs, X);
 end for;

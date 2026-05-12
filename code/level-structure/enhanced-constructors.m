@@ -59,6 +59,7 @@ declare attributes AlgQuatEnhSys :
   mu,
   Enh, // Associative array; Enh[N] is an AlgQuatEnh object at level N
   to_perm, // Associative array; to_perm[N] is an isomorphism from GL4sub(Enh[N]) to a permutation group
+  G1perm,
   Lat, // Associative array; Lat[N] is a SubgroupLat object containing permutation subgroups at levels dividing N with surjective determinant
   Lat1, // Associative array; Lat1[N] is a SubgroupLat object containing permutation subgroups at levels dividing N with determinant 1
   Transfer, // Associative array; Transfer[<N,m>] is the reduction homomorphism from to_perm(GL4sub(Enh[N])) to to_perm(GL4sub(Enh[m]))
@@ -760,6 +761,7 @@ intrinsic ComputeSubs(X::AlgQuatEnhSys, N::RngIntElt) -> SeqEnum
     Enh := EnhancedSemidirectProduct(X, N);
     phi := PermHom(X, N);
     Gperm := Codomain(phi);
+    // TODO: This is wrong when we're computing Lat1: need to intersection with G1.
     KGperm := NormalizerKernelGL4(Enh) @ phi;
 
     t0 := Cputime();
@@ -801,6 +803,7 @@ intrinsic ComputeLats(X::AlgQuatEnhSys, N::RngIntElt)
         Gm := Codomain(phim);
         fake_label := Sprintf("%o.a", #Gm); // The FiniteGroup code expects a label, but only the order is actually used
         GGm := NewLMFDBGrp(Gm, fake_label);
+        GGm`order := #Gm;
         L := ShimuraLat(GGm);
         L1 := ShimuraLat(GGm);
         if m eq N then
@@ -814,6 +817,7 @@ intrinsic ComputeLats(X::AlgQuatEnhSys, N::RngIntElt)
                     is_conj, j, conj_elt := SubgroupIdentify(Lm0, (surjH[i]`subgroup)@reduction : get_conjugator:=true);
                     assert is_conj;
                     L`subs[i]`shimura_label := Lm0`subs[j]`shimura_label;
+                    L`subs[i]`abstract_label := Lm0`subs[j]`abstract_label;
                     //L`subs[i]`full_label := Lm0`subs[j]`full_label;
                     // TODO: store conj_elt
                 end if;
@@ -825,15 +829,16 @@ intrinsic ComputeLats(X::AlgQuatEnhSys, N::RngIntElt)
                     L1m0 := X`Lat1[m0];
                     is_conj, j, conj_elt := SubgroupIdentify(L1m0, (trivH[i]`subgroup)@reduction : get_conjugator:=true);
                     assert is_conj;
-                    L1`subs[i]`shimura_label := Lm0`subs[j]`shimura_label;
+                    L1`subs[i]`shimura_label := L1m0`subs[j]`shimura_label;
+                    L1`subs[i]`abstract_label := L1m0`subs[j]`abstract_label;
                     //L1`subs[i]`full_label := Lm0`subs[j]`full_label;
                     // TODO: store conj_elt
                 end if;
             end for;
             // TODO: we want to change how labels are set, but we keep this for now for backward compatibility
             for m0 in needed do
-                ComputeLevelsLabels(L, Enh : N:=m0, naive:=true);
-                ComputeLevelsLabels(L1, Enh : N:=m0, naive:=true);
+                ComputeLevelsLabels(L, m0 : naive:=true);
+                ComputeLevelsLabels(L1, m0 : naive:=true);
             end for;
         else
             p := Representative({p : p in primes | IsDivisibleBy(N, m*p)});
@@ -927,11 +932,22 @@ intrinsic EnhancedImageGL4O1(Enh::AlgQuatEnh) -> GrpMat
   return G1;
 end intrinsic;
 
+intrinsic G1Perm(X::AlgQuatEnhSys, N::RngIntElt) -> Grp
+{}
+    if not assigned X`G1perm then
+        X`G1perm := AssociativeArray();
+    end if;
+    if not IsDefined(X`G1perm, N) then
+        G1 := EnhancedImageGL4O1(X`Enh[N]);
+        phiN := PermHom(X, N);
+        X`G1perm[N] := (G1 meet Domain(phiN)) @ phiN;
+    end if;
+    return X`G1perm[N];
+end intrinsic;
+
 intrinsic getSLReductionKernels(X::AlgQuatEnhSys, N::RngIntElt, GLkers::Assoc) -> Assoc
 {Intersects with SL(4, Zmod(N))}
-    G1 := EnhancedImageGL4O1(X`Enh[N]);
-    phiN := PermHom(X, N);
-    G1 := (G1 meet Domain(phiN)) @ phiN;
+    G1 := G1Perm(X, N);
     SLkers := AssociativeArray();
     for p in PrimeDivisors(N) do
         SLkers[p] := [H meet G1 : H in GLkers[p]];

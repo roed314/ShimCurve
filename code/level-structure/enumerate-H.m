@@ -1,10 +1,12 @@
 
 declare attributes SubgroupLatElt:
   level, // the minimal integer N from which this subgroup can be pulled back
+  X,
   N, // the actual value of N where this subgroup is defined
   index,
   genus,
   shimura_label,
+  abstract_label,
   sigma,
   genus,
   H1plusquo,
@@ -31,9 +33,7 @@ end intrinsic;
 intrinsic ShimuraLatElement(L::SubgroupLat, H::Grp, X::AlgQuatEnhSys, level::RngIntElt, N::RngIntElt : i:=false, normalizer:=false, centralizer:=false, normal:=0, normal_closure:=false, gens:=false, subgroup_count:=false, standard:=false, recurse:=0, elt_up:=false, phi_factor:=1) -> SubgroupLatElt
 {}
     x := SubgroupLatElement(L, H : i:=i, normalizer:=normalizer, centralizer:=centralizer, normal:=normal, normal_closure:=normal_closure, gens:=gens, subgroup_count:=subgroup_count, standard:=standard, recurse:=recurse);
-    print "PRIOR TO INVALID ASSIGN";
     x`X := X;
-    print "AFTER INVALID ASSIGN";
     x`N := N;
     x`Enh := X`Enh[N];
     x`level := level;
@@ -44,9 +44,31 @@ intrinsic ShimuraLatElement(L::SubgroupLat, H::Grp, X::AlgQuatEnhSys, level::Rng
         x`index := elt_up`index;
         x`genus := elt_up`genus;
         x`shimura_label := elt_up`shimura_label;
+        x`abstract_label := elt_up`abstract_label;
         x`i_at_level := elt_up`i;
     end if;
     return x;
+end intrinsic;
+
+intrinsic psl2label(x::SubgroupLatElt) -> MonStgElt
+{}
+    X := x`X;
+    N := x`N;
+    G1 := G1Perm(X, N);
+    L1 := Lat1(X, N);
+    j := SubgroupIdentify(L1, x`subgroup meet G1);
+    return L1`subs[j]`shimura_label;
+end intrinsic;
+
+intrinsic scalar_label(x::SubgroupLatElt) -> MonStgElt
+{}
+    X := x`X;
+    N := x`N;
+    G1 := G1Perm(X, N);
+    x1 := x`subgroup meet G1;
+    scalar_index := Index(x`subgroup, x1);
+    // TODO: Fix the trailing 1
+    return Sprintf("%o.%o.1", x`level, scalar_index);
 end intrinsic;
 
 // This should work for small groups
@@ -86,9 +108,14 @@ function SortGClass(L)
     return ans;
 end function;
 
-intrinsic ComputeLevelsLabels(Lat::SubgroupLat, X::AlgQuatEnhSys, N::RngIntElt : naive:=false)
+intrinsic ComputeLevelsLabels(Lat::SubgroupLat, level::RngIntElt : naive:=false)
 {}
-    this_level := [H : H in Lat`subs | H`level eq N];
+    this_level := [H : H in Lat`subs | H`level eq level];
+    if #this_level gt 0 then
+        X := this_level[1]`X;
+        N := this_level[1]`N;
+        reduction := Transfer(X, N, level);
+    end if;
     by_ig := IndexFibers(this_level, func<x|<x`level, x`index, x`genus>>);
     for ig -> Hs in by_ig do
         if #Hs eq 1 then
@@ -107,6 +134,7 @@ intrinsic ComputeLevelsLabels(Lat::SubgroupLat, X::AlgQuatEnhSys, N::RngIntElt :
             for gnum in [1..#by_gnum] do
                 H := by_gnum[gnum];
                 H`shimura_label := <Sprintf("%o.%o.%o.%o.%o", H`level, H`index, H`genus, CremonaCode(gcode), gnum), gcode, gnum>;
+                H`abstract_label := GroupLabel((H`subgroup) @ reduction);
             end for;
         end for;
     end for;
@@ -219,7 +247,9 @@ SUBMEET_RF := recformat<subgroup : GrpMat, order : Integers()>;
 
 function createRecord(H, X)
     s := rec< GP_SHIM_RF | >;
-    Hgp := H`subgroup;
+    N := H`N;
+    phi := PermHom(X, N);
+    Hgp := (H`subgroup) @@ phi;
     order := H`order;
     Enh := H`Enh; // Set in ComputeLevelsLabels
     mu := Enh`mu;
@@ -229,7 +259,6 @@ function createRecord(H, X)
     KG := NormalizerKernelGL4(Enh);
     O := Enh`quaternionorder;
     AutFull := Aut(O,mu);
-    N := Modulus(BaseRing(Hgp));
     Henhgens := [GL4ToPair(Hgp.i, O, Ahom) : i in [1..Ngens(Hgp)]];
     aut_mu_norms := [Abs(SquarefreeFactorization(Integers()!Norm(homtoB(pair[1])`element))) : pair in Henhgens];
 
@@ -243,12 +272,11 @@ function createRecord(H, X)
     s`gerbiness:=#KG;
     s`aut_gerbiness:=#{GL4ToPair(x, O, Ahom)[1] : x in KG};
     s`torsion:=PrimaryAbelianInvariants(FixedSubspace(Hgp));
-    s`Glabel:=GroupLabel(Hgp); // TODO: this should maybe be   N eq level select GroupLabel(Hgp) else GroupLabel(Hgp / getKernelOfReduction(OmodN, N div level, G meet ONxinGL4));
-    s`Glabel:= N eq H`level select GroupLabel(Hgp) else GroupLabel(Hgp / (Hgp meet getGLReductionKernels(X, N)[N div H`level][1]));
+    s`Glabel := H`abstract_label;
     s`galEnd:=GroupLabel(Domain(Ahom));
     s`autmuO_norms:=aut_mu_norms;
     s`is_split:=(order eq #(Hgp meet Image(Ahom)) * #(Hgp meet ONx(Enh)));
-    s`generators:=[<homtoB(g[1]),[Integers()!x mod H`level : x in Eltseq(g[2])]> : g in Henhgens]; // TODO: this should maybe be   N eq level select [<AutFull(g[1]),g[2]> : g in Henhgens] else [<AutFull(g[1]),[Integers()!x mod level : x in Eltseq(g[2])]> : g in Henhgens];
+    s`generators:=[<homtoB(g[1]),[Integers()!x mod H`level : x in Eltseq(g[2])]> : g in Henhgens];
     s`generators:= [g : g in Set(s`generators)];
     s`ram_data_elts:=H`sigma;
     s`discO := Discriminant(O);
@@ -269,6 +297,8 @@ function createRecord(H, X)
     s`fine_label := s`coarse_label;
     s`label := Sprintf("%o.%o", s`mu_label, s`fine_label);
     s`is_coarse := true;
+    s`psl2label := psl2label(H);
+    s`scalar_label := scalar_label(H);
 
     nu := EnhancedEllipticPoints(H`sigma);
     s`nu2 := nu[2];
@@ -503,7 +533,9 @@ end intrinsic;
 intrinsic WriteSubgroupsDataToFile(file::IO, subs::SeqEnum[Rec], O::AlgQuatOrd)
 {Write the list of subgroup records to a file, without the header}
     // sorting for consistency
-    for s in Sort(subs) do
+    labels := [H`label : H in subs];
+    ParallelSort(~labels, ~subs);
+    for s in subs do
       gens_readable:= [ writeSeqEnum(Eltseq(O!g[1]`element) cat Eltseq(O!g[2])) : g in s`generators ];
       perms_readable:=[ EncodePerm(p):  p in s`ram_data_elts];
 
@@ -616,7 +648,12 @@ intrinsic WriteHeaderAndSubgroupsDataToFile(subs::SeqEnum[Rec], O::AlgQuatOrd)
     file := Open(filename, "w");
     WriteHeaderToFile(file);
     WriteSubgroupsDataToFile(file, subs, O);
-    return;
+end intrinsic;
+
+intrinsic WriteHeaderAndSubgroupsDataToFile(subs::SeqEnum[SubgroupLatElt], X::AlgQuatEnhSys)
+{}
+    O := X`quaternionorder;
+    WriteHeaderAndSubgroupsDataToFile([createRecord(H, X) : H in subs], O);
 end intrinsic;
 
 
